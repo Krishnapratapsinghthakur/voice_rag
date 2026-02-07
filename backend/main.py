@@ -7,19 +7,22 @@ FastAPI Backend for Voice AI Assistant
 Exposes the RAG pipeline via REST API endpoints.
 
 Endpoints:
-    GET  /health  - Health check
-    POST /query   - Send question, get RAG response
-    POST /tts     - Convert text to speech audio
+    GET  /health          - Health check
+    POST /query           - Send question, get RAG response
+    POST /tts             - Convert text to speech audio
+    POST /admin/upload    - Upload PDF to knowledge base
+    GET  /admin/documents - List ingested documents
 """
 
 import os
 import io
-import tempfile
+import shutil
 from pathlib import Path
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -29,6 +32,8 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from gtts import gTTS
 
 # ============================================
@@ -39,14 +44,19 @@ load_dotenv()
 
 # Paths (relative to project root)
 CHROMA_DB_PATH = Path(__file__).parent.parent / "chroma_db"
+DATA_PATH = Path(__file__).parent.parent / "data"
 COLLECTION_NAME = "pdf_documents"
 
 # Gemini Configuration
-GEMINI_MODEL = "gemini-1.5-flash"
+GEMINI_MODEL = "gemini-2.5-flash"
 TEMPERATURE = 0.3
 
 # RAG Configuration
 RETRIEVAL_K = 3
+
+# Chunking Configuration
+CHUNK_SIZE = 1000
+CHUNK_OVERLAP = 200
 
 # ============================================
 # Prompt Template
@@ -152,14 +162,20 @@ app = FastAPI(
 )
 
 # CORS for React frontend
+# Get allowed origins from environment or use defaults
+FRONTEND_URL = os.getenv("FRONTEND_URL", "")
+cors_origins = [
+    "http://localhost:5173",  # Vite dev server
+    "http://localhost:3000",  # Alternative React port
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+]
+if FRONTEND_URL:
+    cors_origins.append(FRONTEND_URL)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Vite dev server
-        "http://localhost:3000",  # Alternative React port
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -254,6 +270,123 @@ async def text_to_speech(request: TTSRequest):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"TTS failed: {str(e)}")
+
+
+# ============================================
+# Admin Endpoints
+# ============================================
+
+@app.post("/admin/upload")
+async def upload_text_file(file: UploadFile = File(...)):
+    """
+    Upload a text file to the knowledge base.
+    
+    Saves the file, processes it into chunks, creates embeddings,
+    and updates the vector store.
+    """
+    global vectorstore
+    
+    # Validate file type
+    if not file.filename.lower().endswith('.txt'):
+        raise HTTPException(status_code=400, detail="Only text (.txt) files are allowed")
+    
+    try:
+        # Ensure data directory exists
+        DATA_PATH.mkdir(parents=True, exist_ok=True)
+        
+        # Save the uploaded file
+        file_path = DATA_PATH / file.filename
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        print(f"📄 Uploaded: {file.filename}")
+        
+        # Load and process the text file
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        
+        # Create a document from the text content
+        from langchain_core.documents import Document
+        documents = [Document(page_content=content, metadata={"source": file.filename})]
+        
+        print(f"   Loaded {len(content)} characters")
+        
+        # Split into chunks
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=CHUNK_SIZE,
+            chunk_overlap=CHUNK_OVERLAP,
+            length_function=len,
+            separators=["\n\n", "\n", " ", ""]
+        )
+        chunks = text_splitter.split_documents(documents)
+        
+        print(f"   Created {len(chunks)} chunks")
+        
+        # Initialize embeddings
+        embeddings = HuggingFaceEmbeddings(
+            model_name="all-MiniLM-L6-v2",
+            model_kwargs={'device': 'cpu'},
+            encode_kwargs={'normalize_embeddings': True}
+        )
+        
+        # Add to existing vector store or create new one
+        if vectorstore:
+            vectorstore.add_documents(chunks)
+        else:
+            vectorstore = Chroma.from_documents(
+                documents=chunks,
+                embedding=embeddings,
+                collection_name=COLLECTION_NAME,
+                persist_directory=str(CHROMA_DB_PATH)
+            )
+        
+        total_docs = vectorstore._collection.count()
+        print(f"✅ Ingestion complete! Total documents: {total_docs}")
+        
+        return {
+            "success": True,
+            "filename": file.filename,
+            "characters": len(content),
+            "chunks": len(chunks),
+            "total_documents": total_docs
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+
+@app.get("/admin/documents")
+async def list_documents():
+    """
+    List all text documents in the knowledge base.
+    """
+    try:
+        documents = []
+        
+        # List text files in data directory
+        if DATA_PATH.exists():
+            for txt_file in DATA_PATH.glob("*.txt"):
+                stat = txt_file.stat()
+                documents.append({
+                    "filename": txt_file.name,
+                    "size_bytes": stat.st_size,
+                    "size_kb": round(stat.st_size / 1024, 2),
+                    "uploaded_at": datetime.fromtimestamp(stat.st_mtime).isoformat()
+                })
+        
+        # Get vector store stats
+        vectorstore_count = 0
+        if vectorstore:
+            vectorstore_count = vectorstore._collection.count()
+        
+        return {
+            "documents": documents,
+            "total_files": len(documents),
+            "vectorstore_chunks": vectorstore_count
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list documents: {str(e)}")
 
 
 # ============================================

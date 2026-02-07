@@ -52,7 +52,7 @@ CHROMA_DB_PATH = Path("chroma_db")
 COLLECTION_NAME = "pdf_documents"
 
 # Gemini Model Configuration
-GEMINI_MODEL = "gemini-1.5-flash"  # Optimized for low latency
+GEMINI_MODEL = "gemini-2.5-flash-preview-05-20"  # Latest Gemini 2.5 Flash
 TEMPERATURE = 0.3                   # Lower = more focused responses
 
 # Speech Recognition Configuration

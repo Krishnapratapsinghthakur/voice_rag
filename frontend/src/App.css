@@ -1,42 +1,78 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+/* ============================================
+   App Layout with Tab Navigation
+   ============================================ */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+/* Tab Navigation */
+.tab-nav {
+  display: flex;
+  gap: 0;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0 1rem;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.tab-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 1.5rem;
+  background: transparent;
+  border: none;
+  color: #71717a;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+.tab-button::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: transparent;
+  transition: background 0.2s ease;
 }
 
-.card {
-  padding: 2em;
+.tab-button:hover {
+  color: #a1a1aa;
+  background: rgba(255, 255, 255, 0.03);
 }
 
-.read-the-docs {
-  color: #888;
+.tab-button.active {
+  color: #e4e4e7;
+}
+
+.tab-button.active::after {
+  background: linear-gradient(90deg, #a855f7, #3b82f6);
+}
+
+.tab-icon {
+  font-size: 1.125rem;
+}
+
+/* Main Content */
+.app-content {
+  flex: 1;
+  overflow: hidden;
+}
+
+.app-content>* {
+  height: 100%;
+}
+
+/* Override header for child components since we have tab nav */
+.app-content .header {
+  border-top: none;
 }
