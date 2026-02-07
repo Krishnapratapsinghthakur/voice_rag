@@ -1,0 +1,38 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Node modules (frontend)
+frontend/node_modules/
+node_modules/
+
+# Cache directories
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+
+# ChromaDB (will be created in production)
+chroma_db/
+
+# Git
+.git/
+
+# IDE
+.vscode/
+.idea/
+
+# Lock files (Railway will install fresh)
+uv.lock
+
+# Local data files
+data/*.pdf
+data/*.txt
+
+# Huggingface cache (will download fresh)
+.cache/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
